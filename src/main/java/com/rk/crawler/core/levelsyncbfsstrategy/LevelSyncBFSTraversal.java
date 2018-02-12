@@ -33,7 +33,7 @@ public class LevelSyncBFSTraversal extends AbstractTraversal {
     private Set<URL> visited = new URLSet();
     private Map<String, Integer> wordCounts = new HashMap<>();
     private List<ParsingResult> parsingResults;
-    private int currentDepth = -1;
+    private int currentDepth = 0;
 
     private class ParsingTask implements Callable<ParsingResult> {
         private URL url;
@@ -43,7 +43,7 @@ public class LevelSyncBFSTraversal extends AbstractTraversal {
         }
 
         public ParsingResult call() {
-            ParsingResult parsingResult = parsingStrategy.parse(url);
+            ParsingResult parsingResult = Optional.ofNullable(parsingStrategy.parse(url)).orElse(ParsingResult.EMPTY_RESULT);
             parsingResult.getLinks().removeAll(visited);
             return parsingResult;
         }
@@ -61,11 +61,11 @@ public class LevelSyncBFSTraversal extends AbstractTraversal {
         CrawlerTimer.start();
         log.debug("Start words sorting");
         List<Map.Entry<String, Integer>> entries = wordCounts.entrySet().stream()
-                .sorted(Map.Entry.comparingByValue())
+                .sorted((a, b) -> b.getValue().compareTo(a.getValue()))
                 .collect(Collectors.toList());
         boolean enoughEntries = entries.size() >= webCrawlerConfig.getWordsCount();
 
-        List<Frequency> result = entries.subList(enoughEntries ? entries.size() - webCrawlerConfig.getWordsCount() : 0, entries.size())
+        List<Frequency> result = entries.subList(0, enoughEntries ? webCrawlerConfig.getWordsCount() : entries.size())
                 .stream()
                 .map(entry -> new Frequency(entry.getKey(), entry.getValue()))
                 .collect(Collectors.toList());
@@ -75,7 +75,7 @@ public class LevelSyncBFSTraversal extends AbstractTraversal {
 
     private void traverse() {
         try {
-            while (!currentQueue.isEmpty() && currentDepth < webCrawlerConfig.getMaxDepth()) {
+            while (!currentQueue.isEmpty() && currentDepth <= webCrawlerConfig.getMaxDepth()) {
                 visited.addAll(currentQueue);
                 CrawlerTimer.start();
                 log.debug("Submit '{}' parsing tasks", currentQueue.size());
@@ -95,7 +95,7 @@ public class LevelSyncBFSTraversal extends AbstractTraversal {
                     parsingResults.add(future.get());
                 }
                 log.info("Depth '{}' parsed: '{}', {} pages visited.", currentDepth, CrawlerTimer.getTimeString(), visited.size());
-                log.info("Total different words: '{}'", wordCounts.size());
+                log.info("Accumulated words count: '{}'", wordCounts.size());
                 parsingResults.forEach(parsingResult -> nextQueue.addAll(parsingResult.getLinks()));
                 swapQueues();
             }
